@@ -1,39 +1,45 @@
 import socket
 import threading
 
-sock = None
-ip = '192.168.0.13'
-port = 25567
-
-'''
-Read Server.py docstrings for further information
-'''
+ip_ = '192.168.0.13'
+port_ = 25567
 
 
-def connect_to(ip_, port_):
-    sock = socket.socket()
-    try:
-        sock.connect((ip_, port_))
-    except Exception as e:
-        print(e)
-    return sock
+class SocketClient:
+    '''
+    Read Server.py docstrings for further information
+    '''
+
+    def __init__(self, ip, port, on_receive=None):
+        self.ip = ip
+        self.port = port
+        self.on_receive = None
+        self.socket = None
+        self.on_receive = on_receive
+
+    def start(self):
+        self.socket = socket.socket()
+        try:
+            self.socket.connect((self.ip, self.port))
+        except Exception as e:
+            print(e)
+        t1 = threading.Thread(target=self.listen)
+        t1.start()
+
+    def listen(self):
+        while True:
+            msg = self.socket.recv(1000)
+            if callable(self.on_receive):
+                self.on_receive(msg)
+
+    def send(self, msg):
+        self.socket.send(msg)
 
 
-def listen(sock):
+if __name__ == '__main__':
+    client = SocketClient(ip_, port_, lambda x: print('from server: ', x.decode()))
+    client.start()
     while True:
-        msg = sock.recv(1000).decode()
-        print('message received from server == ', msg)
-
-
-def send(sock, msg: str):
-    sock.send(msg.encode())
-
-
-client_sock = connect_to(ip, port)
-t1 = threading.Thread(target=listen, args={client_sock})
-t1.start()
-
-while True:
-    msg = input('Enter message to server:\n')
-    print('sending "{}"'.format(msg))
-    send(client_sock, msg)
+        msg = input('Enter message to server:\n')
+        print('sending "{}"'.format(msg))
+        client.send(msg.encode())
