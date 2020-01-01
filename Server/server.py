@@ -1,5 +1,8 @@
 import socket
 import threading
+from Commands import Commands
+from Commands import CommandHandler
+from Server.ClientHandler import ClientHandler
 from DevTools.devtools import dev_mode
 
 # Static  global variables in Python.
@@ -11,69 +14,8 @@ but nonetheless is very useful to understand sooner the better.
  https://radek.io/2011/07/21/static-variables-and-methods-in-python/
 '''
 
-ip_ = '192.168.0.13'
-port_ = 25567
-
-
-# TODO: Add Error Handling for listen and sending functions for the event of a socket disconnection.
-
-class ClientHandler(threading.Thread):
-    """
-        Client Handler will be used to delegate incoming connections to it's own object and have the objects separately
-        listening to oncoming messages in a separate thread from the main.
-
-        Client Handler expects an socket object, the socket's address, and a optional receive function which
-        requires an function that passes a parameter of bytes.
-
-        Programming Concepts:
-            OOP (Object-Oriented-Programming) -> https://realpython.com/python3-object-oriented-programming/
-            Threading -> https://realpython.com/intro-to-python-threading/
-
-
-
-    """
-
-    def __init__(self, client_sock, address, on_receive=None, on_disconnected=None):
-        self.client_sock = client_sock
-        self.address = address
-        self.stop = False
-        self.on_receive = on_receive # function, params: data,client_handler
-        # on_receive passes the received data and the client_handler its from.
-
-        self.on_disconnected = on_disconnected
-
-        if (self.on_receive is None) and dev_mode:
-            print("WARNING NO FUNCTION LISTENING FOR CLIENT SOCK ", address)
-
-        super(self.__class__, self).__init__(target=self.listen)
-
-    def send(self, msg):
-        try:
-            self.client_sock.send(msg)
-        except Exception:
-            self.stop = True
-            pass
-
-    def listen(self):
-
-        while True or not self.stop:
-            try:
-
-                # Wait for message
-                msg = self.client_sock.recv(1000)
-                if not msg:
-                    print('client disconnected')
-                    break
-
-                # If function is  callable  will send to custom function
-                if callable(self.on_receive):
-                    print('Sending "{}" from {}  server.py  ClientHandler'.format(msg, self.address))
-                    self.on_receive(msg, self)
-            except Exception:
-                pass
-                break
-        if callable(self.on_disconnected):
-            self.on_disconnected(self)
+ip_ = '192.168.0.22'
+port_ = 25565
 
 
 class Server:
@@ -95,52 +37,57 @@ class Server:
         self.server_sock = socket.socket()
         self.server_sock.bind((ip, port))
         self.server_sock.listen(1)
+        Commands.set_server_reference(self)
 
     def start(self):
         t1 = threading.Thread(target=self.handle_new_clients)
         t1.start()
 
+    # remove client from clients list,  and say who has left.
     def remove_client(self, client):
         print('removing client...', client)
         self.clients.remove(client)
 
-    def broadcast_message(self, msg, client_from):
+        if len(self.clients) > 0:
+            print('broadcasting')
 
-        for client in self.clients:
-            client.send(msg)  # encode message to string
+            disconnect_msg = client.username + " Has disconnected!!"
+
+            self.broadcast_message(disconnect_msg.encode('utf-8'), client)
+
+    def broadcast_message(self, msg, client_from):
+        is_command, output = CommandHandler.handle_message(msg.decode(), client_from)
+
+        if is_command and isinstance(output, str):
+            print('sending command?')
+            client_from.send(output.encode('utf-8'))
+        else:
+            for client in self.clients:
+                client.send(msg)  # encode message to string
 
     def handle_new_clients(self):
 
         while True:
-
+            new_client = None
             client_sock, address = self.server_sock.accept()
             try:
                 invalid_client = False
-                error_msg = None
-                new_client = None
+
                 if callable(self.client_obj):
                     new_client = self.client_obj(client_sock, address, on_receive=self.broadcast_message,
                                                  on_disconnected=self.remove_client)
+                    self.clients.append(new_client)  # add new client_handler to clients list for later use.
                     if isinstance(new_client, ClientHandler):
                         new_client.start()
-                    else:
-                        invalid_client = True
-                        error_msg = 'Invalid ClientHandler Delegator, self.client_handler_delegate() must return ClientHandler instead of {}'.format(
-                            new_client)
-                        break
+
+
+
                 else:
                     invalid_client = True
                     error_msg = 'Invalid client_handler_delegator, must be callable'
 
-                if invalid_client:
-                    raise Exception(error_msg)
 
-                # test Message for new user connecting
-                # msg = "Hello! your address is " + str(address) + "!"
-                # new_client.send(msg.encode())
 
-                self.clients.append(new_client)  # add new client_handler to clients list for lat-er use.
-                print('clients length now  = ', len(self.clients))
             except Exception as e:
                 print(e)
 
@@ -148,4 +95,5 @@ class Server:
 # Temp Example
 if __name__ == '__main__':
     server = Server(ip_, port_)
+
     server.start()
